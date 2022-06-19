@@ -52,8 +52,7 @@ def database_name():
 @pytest.mark.asyncio
 @pytest.fixture(scope="function")
 async def engine(motor_client, database_name):
-    sess = AIOEngine(motor_client, database_name)
-    yield sess
+    yield AIOEngine(motor_client, database_name)
     if os.getenv("TEST_DEBUG") is None:
         await motor_client.drop_database(database_name)
 

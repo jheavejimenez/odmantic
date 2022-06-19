@@ -126,21 +126,7 @@ _IMMUTABLE_TYPES = (
 
 def is_type_mutable(type_: Type) -> bool:
     type_origin: Optional[Type] = getattr(type_, "__origin__", None)
-    if type_origin is not None:
-        type_args: Tuple[Type, ...] = getattr(type_, "__args__", ())
-        for type_arg in type_args:
-            if type_arg is ...:  # Handle tuple definition
-                continue
-            if lenient_issubclass(type_origin, Iterable) and lenient_issubclass(
-                type_arg, EmbeddedModel
-            ):  # Handle nested embedded models
-                return True
-            if is_type_mutable(type_arg):
-                return True
-        if type_origin is Union:
-            return False
-        return not lenient_issubclass(type_origin, _IMMUTABLE_TYPES)
-    else:
+    if type_origin is None:
         return not (
             type_ is None  # type:ignore
             or (
@@ -148,13 +134,23 @@ def is_type_mutable(type_: Type) -> bool:
                 and not lenient_issubclass(type_, EmbeddedModel)
             )
         )
+    type_args: Tuple[Type, ...] = getattr(type_, "__args__", ())
+    for type_arg in type_args:
+        if type_arg is ...:  # Handle tuple definition
+            continue
+        if lenient_issubclass(type_origin, Iterable) and lenient_issubclass(
+            type_arg, EmbeddedModel
+        ):  # Handle nested embedded models
+            return True
+        if is_type_mutable(type_arg):
+            return True
+    if type_origin is Union:
+        return False
+    return not lenient_issubclass(type_origin, _IMMUTABLE_TYPES)
 
 
 def is_type_forbidden(t: Type) -> bool:
-    if t is Callable or t is abcCallable:
-        # Callable type require a special treatment since typing.Callable is not a class
-        return True
-    return False
+    return t is Callable or t is abcCallable
 
 
 def validate_type(type_: Type) -> Type:
@@ -196,7 +192,7 @@ def validate_type(type_: Type) -> Type:
 
 class BaseModelMetaclass(pydantic.main.ModelMetaclass):
     @staticmethod
-    def __validate_cls_namespace__(name: str, namespace: Dict) -> None:  # noqa C901
+    def __validate_cls_namespace__(name: str, namespace: Dict) -> None:    # noqa C901
         """Validate the class name space in place"""
         annotations = resolve_annotations(
             namespace.get("__annotations__", {}), namespace.get("__module__")
@@ -273,35 +269,34 @@ class BaseModelMetaclass(pydantic.main.ModelMetaclass):
                 )
                 references.append(field_name)
                 del namespace[field_name]  # Remove default ODMReferenceInfo value
+            elif isinstance(value, ODMFieldInfo):
+                key_name = (
+                    value.key_name if value.key_name is not None else field_name
+                )
+                raise_on_invalid_key_name(key_name)
+                odm_fields[field_name] = ODMField(
+                    primary_field=value.primary_field,
+                    key_name=key_name,
+                    model_config=config,
+                )
+                namespace[field_name] = value.pydantic_field_info
+
+            elif value is Undefined:
+                odm_fields[field_name] = ODMField(
+                    primary_field=False, key_name=field_name, model_config=config
+                )
+
             else:
-                if isinstance(value, ODMFieldInfo):
-                    key_name = (
-                        value.key_name if value.key_name is not None else field_name
+                try:
+                    parse_obj_as(field_type, value)
+                except ValidationError:
+                    raise TypeError(
+                        f"Unhandled field definition {name}: {repr(field_type)}"
+                        f" = {repr(value)}"
                     )
-                    raise_on_invalid_key_name(key_name)
-                    odm_fields[field_name] = ODMField(
-                        primary_field=value.primary_field,
-                        key_name=key_name,
-                        model_config=config,
-                    )
-                    namespace[field_name] = value.pydantic_field_info
-
-                elif value is Undefined:
-                    odm_fields[field_name] = ODMField(
-                        primary_field=False, key_name=field_name, model_config=config
-                    )
-
-                else:
-                    try:
-                        parse_obj_as(field_type, value)
-                    except ValidationError:
-                        raise TypeError(
-                            f"Unhandled field definition {name}: {repr(field_type)}"
-                            f" = {repr(value)}"
-                        )
-                    odm_fields[field_name] = ODMField(
-                        primary_field=False, key_name=field_name, model_config=config
-                    )
+                odm_fields[field_name] = ODMField(
+                    primary_field=False, key_name=field_name, model_config=config
+                )
 
         duplicate_key = find_duplicate_key(odm_fields.values())
         if duplicate_key is not None:
@@ -374,25 +369,22 @@ class BaseModelMetaclass(pydantic.main.ModelMetaclass):
 
 class ModelMetaclass(BaseModelMetaclass):
     @no_type_check
-    def __new__(  # noqa C901
-        mcs,
-        name: str,
-        bases: Tuple[type, ...],
-        namespace: Dict[str, Any],
-        **kwargs: Any,
-    ):
+    def __new__(cls, name: str, bases: Tuple[type, ...], namespace: Dict[str, Any], **kwargs: Any):
         if namespace.get("__module__") != "odmantic.model" and namespace.get(
             "__qualname__"
         ) not in ("_BaseODMModel", "Model"):
-            mcs.__validate_cls_namespace__(name, namespace)
+            cls.__validate_cls_namespace__(name, namespace)
             config: BaseODMConfig = namespace["Config"]
-            primary_field: Optional[str] = None
             odm_fields: Dict[str, ODMBaseField] = namespace["__odm_fields__"]
 
-            for field_name, field in odm_fields.items():
-                if isinstance(field, ODMField) and field.primary_field:
-                    primary_field = field_name
-                    break
+            primary_field: Optional[str] = next(
+                (
+                    field_name
+                    for field_name, field in odm_fields.items()
+                    if isinstance(field, ODMField) and field.primary_field
+                ),
+                None,
+            )
 
             if primary_field is None:
                 if "id" in odm_fields:
@@ -420,33 +412,25 @@ class ModelMetaclass(BaseModelMetaclass):
                 )
             else:
                 cls_name = name
-                if cls_name.endswith("Model"):
-                    # TODO document this
-                    cls_name = cls_name[:-5]  # Strip Model in the class name
+                cls_name = cls_name.removesuffix("Model")
                 collection_name = to_snake_case(cls_name)
             raise_on_invalid_collection_name(collection_name, cls_name=name)
             namespace["__collection__"] = collection_name
 
-        return super().__new__(mcs, name, bases, namespace, **kwargs)
+        return super().__new__(cls, name, bases, namespace, **kwargs)
 
-    def __pos__(cls) -> str:
-        return cast(str, getattr(cls, "__collection__"))
+    def __pos__(self) -> str:
+        return cast(str, getattr(self, "__collection__"))
 
 
 class EmbeddedModelMetaclass(BaseModelMetaclass):
     @no_type_check
-    def __new__(
-        mcs,
-        name: str,
-        bases: Tuple[type, ...],
-        namespace: Dict[str, Any],
-        **kwargs: Any,
-    ):
+    def __new__(cls, name: str, bases: Tuple[type, ...], namespace: Dict[str, Any], **kwargs: Any):
 
         if namespace.get("__module__") != "odmantic.model" and namespace.get(
             "__qualname__"
         ) not in ("_BaseODMModel", "EmbeddedModel"):
-            mcs.__validate_cls_namespace__(name, namespace)
+            cls.__validate_cls_namespace__(name, namespace)
             odm_fields: Dict[str, ODMBaseField] = namespace["__odm_fields__"]
             for field in odm_fields.values():
                 if isinstance(field, ODMField) and field.primary_field:
@@ -454,7 +438,7 @@ class EmbeddedModelMetaclass(BaseModelMetaclass):
                         f"cannot define a primary field in {name} embedded document"
                     )
 
-        return super().__new__(mcs, name, bases, namespace, **kwargs)
+        return super().__new__(cls, name, bases, namespace, **kwargs)
 
 
 BaseT = TypeVar("BaseT", bound="_BaseODMModel")
@@ -484,11 +468,7 @@ class _BaseODMModel(pydantic.BaseModel, metaclass=ABCMeta):
 
     @classmethod
     def validate(cls: Type[BaseT], value: Any) -> BaseT:
-        if isinstance(value, cls):
-            # Do not copy the object as done in pydantic
-            # This enable to keep the same python object
-            return value
-        return super().validate(value)
+        return value if isinstance(value, cls) else super().validate(value)
 
     def __repr_args__(self) -> "ReprArgs":
         # Place the id field first in the repr string
@@ -655,13 +635,12 @@ class _BaseODMModel(pydantic.BaseModel, metaclass=ABCMeta):
                 continue
             if isinstance(field, ODMReference):
                 doc[field.key_name] = raw_doc[field_name]["id"]
+            elif field_name in self.__bson_serialized_fields__:
+                doc[field.key_name] = self.__fields__[field_name].type_.__bson__(
+                    raw_doc[field_name]
+                )
             else:
-                if field_name in self.__bson_serialized_fields__:
-                    doc[field.key_name] = self.__fields__[field_name].type_.__bson__(
-                        raw_doc[field_name]
-                    )
-                else:
-                    doc[field.key_name] = raw_doc[field_name]
+                doc[field.key_name] = raw_doc[field_name]
         return doc
 
     @classmethod
@@ -771,19 +750,21 @@ class Model(_BaseODMModel, metaclass=ModelMetaclass):
             isinstance(patch_object, BaseModel)
             and self.__primary_field__ in patch_object.__fields__
         ) or (isinstance(patch_object, dict) and self.__primary_field__ in patch_object)
-        if is_primary_field_in_patch:
-            if (
+        if is_primary_field_in_patch and (
+            (
                 include is None
                 and (exclude is None or self.__primary_field__ not in exclude)
-            ) or (
+            )
+            or (
                 include is not None
                 and self.__primary_field__ in include
                 and (exclude is None or self.__primary_field__ not in exclude)
-            ):
-                raise ValueError(
-                    "Updating the primary key is not supported. "
-                    "See the copy method if you want to modify the primary field."
-                )
+            )
+        ):
+            raise ValueError(
+                "Updating the primary key is not supported. "
+                "See the copy method if you want to modify the primary field."
+            )
         return super().update(
             patch_object,
             include=include,

@@ -95,7 +95,7 @@ async def test_find_sync_iteration(
     for inst in await engine.find(PersonModel):
         fetched.add(inst.id)
 
-    assert set(i.id for i in person_persisted) == fetched
+    assert {i.id for i in person_persisted} == fetched
 
 
 @pytest.mark.usefixtures("person_persisted")

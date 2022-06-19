@@ -20,10 +20,7 @@ class ASCIISerializedAsBinary(str):
 
     @classmethod
     def __bson__(cls, v: str):
-        # We can encode this string as ascii since it contains
-        # only ascii characters
-        bytes_ = v.encode("ascii")
-        return bytes_
+        return v.encode("ascii")
 
 
 class Example(Model):

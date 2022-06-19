@@ -17,7 +17,7 @@ def raise_on_invalid_collection_name(collection_name: str, cls_name: str) -> Non
     # https://docs.mongodb.com/manual/reference/limits/#Restriction-on-Collection-Names
     if "$" in collection_name:
         raise TypeError(f"Invalid collection name for {cls_name}: cannot contain '$'")
-    if collection_name == "":
+    if not collection_name:
         raise TypeError(f"Invalid collection name for {cls_name}: cannot be empty")
     if collection_name.startswith("system."):
         raise TypeError(

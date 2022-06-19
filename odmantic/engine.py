@@ -81,7 +81,7 @@ class AIOCursor(
         self._results = results
 
 
-_FORBIDDEN_DATABASE_CHARACTERS = set(("/", "\\", ".", '"', "$"))
+_FORBIDDEN_DATABASE_CHARACTERS = {"/", "\\", ".", '"', "$"}
 
 
 class AIOEngine:
@@ -128,7 +128,7 @@ class AIOEngine:
 
     @staticmethod
     def _build_query(*queries: Union[QueryExpression, Dict, bool]) -> QueryExpression:
-        if len(queries) == 0:
+        if not queries:
             return QueryExpression()
         for query in queries:
             if isinstance(query, bool):
@@ -182,9 +182,9 @@ class AIOEngine:
         sort_field: Union[FieldProxy, SortExpression]
     ) -> SortExpression:
         return (
-            SortExpression({+sort_field: 1})
-            if not isinstance(sort_field, SortExpression)
-            else sort_field
+            sort_field
+            if isinstance(sort_field, SortExpression)
+            else SortExpression({+sort_field: 1})
         )
 
     @classmethod
@@ -308,7 +308,8 @@ class AIOEngine:
         await gather(*save_tasks)
         fields_to_update = (
             instance.__fields_modified__ | instance.__mutable_fields__
-        ) - set([instance.__primary_field__])
+        ) - {instance.__primary_field__}
+
         if len(fields_to_update) > 0:
             doc = instance.doc(include=fields_to_update)
             collection = self.get_collection(type(instance))
