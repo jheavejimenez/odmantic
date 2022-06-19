@@ -30,38 +30,42 @@ def test_repr_embedded_model():
 
 
 def test_fields_modified_no_modification():
+
     class M(Model):
         f: int
 
     instance = M(f=0)
-    assert instance.__fields_modified__ == set(["f", "id"])
+    assert instance.__fields_modified__ == {"f", "id"}
 
 
 def test_fields_embedded_modified_no_modification():
+
     class M(EmbeddedModel):
         f: int
 
     instance = M(f=0)
-    assert instance.__fields_modified__ == set(["f"])
+    assert instance.__fields_modified__ == {"f"}
 
 
 def test_fields_modified_with_default():
+
     class M(Model):
         f: int = 5
 
     instance = M(f=0)
-    assert instance.__fields_modified__ == set(["f", "id"])
+    assert instance.__fields_modified__ == {"f", "id"}
 
 
 @pytest.mark.parametrize("model_cls", [Model, EmbeddedModel])
 def test_fields_modified_one_update(model_cls):
+
     class M(model_cls):  # type: ignore
         f: int
 
     instance = M(f=0)
     instance.__fields_modified__.clear()
     instance.f = 1
-    assert instance.__fields_modified__ == set(["f"])
+    assert instance.__fields_modified__ == {"f"}
 
 
 def test_field_update_with_invalid_data_type():
@@ -95,14 +99,14 @@ def test_validate_from_dict():
 
 def test_fields_modified_on_construction():
     instance = PersonModel(first_name="Jean", last_name="Pierre")
-    assert instance.__fields_modified__ == set(["first_name", "last_name", "id"])
+    assert instance.__fields_modified__ == {"first_name", "last_name", "id"}
 
 
 def test_fields_modified_on_document_parsing():
     instance = PersonModel.parse_doc(
         {"_id": ObjectId(), "first_name": "Jackie", "last_name": "Chan"}
     )
-    assert instance.__fields_modified__ == set(["first_name", "last_name", "id"])
+    assert instance.__fields_modified__ == {"first_name", "last_name", "id"}
 
 
 def test_document_parsing_error_keyname():
@@ -158,7 +162,7 @@ def test_fields_modified_on_object_parsing():
     instance = PersonModel.parse_obj(
         {"_id": ObjectId(), "first_name": "Jackie", "last_name": "Chan"}
     )
-    assert instance.__fields_modified__ == set(["first_name", "last_name", "id"])
+    assert instance.__fields_modified__ == {"first_name", "last_name", "id"}
 
 
 def test_change_primary_key_value():

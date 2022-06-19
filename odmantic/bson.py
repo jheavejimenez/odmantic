@@ -125,8 +125,7 @@ class _Pattern:
         elif isinstance(v, bson.regex.Regex):
             return re.compile(v.pattern, flags=v.flags)
 
-        a = pattern_validator(v)
-        return a
+        return pattern_validator(v)
 
 
 class _datetime(datetime):
@@ -136,10 +135,7 @@ class _datetime(datetime):
 
     @classmethod
     def validate(cls, v: Any) -> datetime:
-        if isinstance(v, datetime):
-            d = v
-        else:
-            d = parse_datetime(v)
+        d = v if isinstance(v, datetime) else parse_datetime(v)
         # MongoDB does not store timezone info
         # https://docs.python.org/3/library/datetime.html#determining-if-an-object-is-aware-or-naive
         if d.tzinfo is not None and d.tzinfo.utcoffset(d) is not None:
@@ -171,8 +167,7 @@ class _decimalDecimal(decimal.Decimal):
         elif isinstance(v, bson.decimal128.Decimal128):
             return cast(decimal.Decimal, v.to_decimal())
 
-        a = decimal_validator(v)
-        return a
+        return decimal_validator(v)
 
     @classmethod
     def __bson__(cls, v: Any) -> bson.decimal128.Decimal128:

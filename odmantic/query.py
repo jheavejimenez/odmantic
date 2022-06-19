@@ -112,10 +112,7 @@ def match(field: FieldProxyAny, pattern: Union[Pattern, str]) -> QueryExpression
     """Select instances where `field` matches the `pattern` regular expression."""
     # FIXME might create incompatibilities
     # https://docs.mongodb.com/manual/reference/operator/query/regex/#regex-and-not
-    if isinstance(pattern, str):
-        r = re.compile(pattern)
-    else:
-        r = pattern
+    r = re.compile(pattern) if isinstance(pattern, str) else pattern
     return QueryExpression({+field: r})
 
 

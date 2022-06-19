@@ -219,12 +219,11 @@ class ODMField(ODMBaseField):
         if self.model_config.parse_doc_with_default_factories:
             return self.pydantic_field.get_default()
 
-        if self.pydantic_field.default is None:
-            # deepcopy is quite slow on None
-            value = None
-        else:
-            value = deepcopy(self.pydantic_field.default)
-        return value
+        return (
+            None
+            if self.pydantic_field.default is None
+            else deepcopy(self.pydantic_field.default)
+        )
 
 
 class ODMReference(ODMBaseField):

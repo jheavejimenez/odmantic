@@ -48,7 +48,7 @@ RELEASE_NOTE_PATH = "./__release_notes__.md"
 
 def get_release_notes() -> str:
     with open("./CHANGELOG.md", "r") as f:
-        while not f.readline().strip() == "## [Unreleased]":
+        while f.readline().strip() != "## [Unreleased]":
             pass
         content = ""
         while not (line := f.readline().strip()).startswith("## "):
